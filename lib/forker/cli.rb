@@ -8,32 +8,55 @@ module Forker
       true
     end
 
-    desc "list --account=ACCOUNT", "List all forks for a GitHub account"
-    option :account, type: :string, required: true, desc: "GitHub account URL or username"
+    desc "list", "List all forks (from Gemfile if no account specified, or for a specific account)"
+    option :account, type: :string, required: false, desc: "GitHub account URL or username (optional)"
     def list
       manager = ForkManager.new
-      forks = manager.list_forks(options[:account])
       
-      if forks.empty?
-        puts "No forks found for account: #{options[:account]}"
-      else
-        puts "\nForks for #{options[:account]}:"
-        puts "-" * 80
-        forks.each do |fork|
-          puts "\n#{fork[:name]}"
-          puts "  URL: #{fork[:url]}"
-          puts "  Root: #{fork[:root_url]}" if fork[:root_url]
-          puts "  Description: #{fork[:description]}" if fork[:description]
-          puts "  Updated: #{fork[:updated_at]}"
+      if options[:account]
+        # List forks for specific account
+        forks = manager.list_forks(options[:account])
+        
+        if forks.empty?
+          puts "No forks found for account: #{options[:account]}"
+        else
+          puts "\nForks for #{options[:account]}:"
+          puts "-" * 80
+          forks.each do |fork|
+            puts "\n#{fork[:name]}"
+            puts "  URL: #{fork[:url]}"
+            puts "  Root: #{fork[:root_url]}" if fork[:root_url]
+            puts "  Description: #{fork[:description]}" if fork[:description]
+            puts "  Updated: #{fork[:updated_at]}"
+          end
+          puts "\nTotal forks: #{forks.size}"
         end
-        puts "\nTotal forks: #{forks.size}"
+      else
+        # Scan Gemfile for all forks
+        forks = manager.list_gemfile_forks
+        
+        if forks.empty?
+          puts "No forks found in Gemfile"
+        else
+          puts "\nForks in Gemfile:"
+          puts "-" * 80
+          forks.each do |fork|
+            puts "\n#{fork[:name]}"
+            puts "  URL: #{fork[:url]}"
+            puts "  Root: #{fork[:root_url]}" if fork[:root_url]
+            puts "  Type: #{fork[:type]}" if fork[:type]
+            puts "  Description: #{fork[:description]}" if fork[:description]
+            puts "  Updated: #{fork[:updated_at]}" if fork[:updated_at]
+          end
+          puts "\nTotal forks: #{forks.size}"
+        end
       end
     rescue Error => e
       puts "Error: #{e.message}"
       exit 1
     end
 
-    desc "fork --url=URL --account=ACCOUNT", "Fork a repository on GitHub"
+    desc "fork", "Fork a repository on GitHub"
     option :url, type: :string, required: true, desc: "Repository URL to fork"
     option :account, type: :string, required: true, desc: "GitHub account to fork to"
     def fork

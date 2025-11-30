@@ -27,6 +27,63 @@ module Forker
       forks
     end
 
+    def list_gemfile_forks
+      gemfile_path = File.join(Dir.pwd, "Gemfile")
+      unless File.exist?(gemfile_path)
+        raise Error, "Gemfile not found in current directory"
+      end
+
+      gemfile_content = File.read(gemfile_path)
+      forks = []
+
+      # Parse git-based gems
+      gemfile_content.scan(/gem\s+['"]([^'"]+)['"]\s*,\s*git:\s*['"]([^'"]+)['"]/) do |gem_name, git_url|
+        next unless git_url.include?("github.com")
+        
+        fork_info = check_if_fork(git_url)
+        if fork_info
+          forks << {
+            name: gem_name,
+            url: git_url,
+            type: "git",
+            root_url: fork_info[:root_url],
+            description: fork_info[:description],
+            updated_at: fork_info[:updated_at]
+          }
+          
+          # Save fork information
+          @storage.save_fork_info(gem_name, fork_info.merge(fork_url: git_url))
+        end
+      end
+
+      # Parse path-based gems (check if they're git repos with remotes)
+      gemfile_content.scan(/gem\s+['"]([^'"]+)['"]\s*,\s*path:\s*['"]([^'"]+)['"]/) do |gem_name, path|
+        full_path = File.expand_path(path, Dir.pwd)
+        next unless File.directory?(File.join(full_path, ".git"))
+        
+        # Get the remote URL
+        remote_url = get_git_remote_url(full_path)
+        next unless remote_url && remote_url.include?("github.com")
+        
+        fork_info = check_if_fork(remote_url)
+        if fork_info
+          forks << {
+            name: gem_name,
+            url: remote_url,
+            type: "path (vendored)",
+            root_url: fork_info[:root_url],
+            description: fork_info[:description],
+            updated_at: fork_info[:updated_at]
+          }
+          
+          # Save fork information
+          @storage.save_fork_info(gem_name, fork_info.merge(fork_url: remote_url))
+        end
+      end
+
+      forks
+    end
+
     def fork_statuses
       tracked_gems = @storage.list_tracked_gems
       
@@ -160,6 +217,39 @@ module Forker
     end
 
     private
+
+    def check_if_fork(repo_url)
+      owner, repo = parse_repo_from_url(repo_url)
+      repo_info = @github.get_repository_info("#{owner}/#{repo}")
+      
+      if repo_info[:is_fork]
+        # It's a fork, find the root
+        root_info = @github.find_root_repository(owner, repo)
+        {
+          fork: true,
+          root_url: root_info[:url],
+          description: repo_info[:description],
+          updated_at: repo_info[:updated_at],
+          owner: owner,
+          name: repo
+        }
+      else
+        nil
+      end
+    rescue GitHubError => e
+      # If we can't check, assume it's not a fork
+      nil
+    end
+
+    def get_git_remote_url(path)
+      Dir.chdir(path) do
+        remote_url = `git config --get remote.origin.url`.strip
+        return nil if remote_url.empty?
+        remote_url
+      end
+    rescue StandardError
+      nil
+    end
 
     def parse_repo_from_url(url)
       # Handle various GitHub URL formats

@@ -1,0 +1,1 @@
+/Users/ericlaquer/Documents/GitHub/active_data_flow/vendor/vendorer/.kiro/steering/vendorer.md
